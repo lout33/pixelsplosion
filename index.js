@@ -1,22 +1,39 @@
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import metaversefile from 'metaversefile';
-const {useApp, useFrame} = metaversefile;
+const {useApp, useFrame, useActivate, useUse, useInternals} = metaversefile;
 
-const numSmokes = 100;
+const numSmokes = 20;
 const numZs = 10;
-const explosionCubeGeometry = new THREE.BoxBufferGeometry(0.05, 0.05, 0.05);
+const explosionCubeGeometry = new THREE.BoxBufferGeometry(0.04, 0.04, 0.04);
 const explosionCubeMaterial = new THREE.ShaderMaterial({
   uniforms: {
     uAnimation: {
       type: 'f',
       value: 0,
+      needsUpdate: true,
+    },
+    uColor1: {
+      type: 'v3',
+      value: new THREE.Color(0x9ccc65),
+      needsUpdate: true,
+    },
+    uColor2: {
+      type: 'v3',
+      value: new THREE.Color(0x7e57c2),
+      needsUpdate: true,
+    },
+    uGravity: {
+      type: 'f',
+      value: 0,
+      needsUpdate: true,
     },
   },
   vertexShader: `\
     #define PI 3.1415926535897932384626433832795
 
     uniform float uAnimation;
+    uniform float uGravity;
     attribute float z;
     attribute float maxZ;
     attribute vec4 q;
@@ -29,13 +46,13 @@ const explosionCubeMaterial = new THREE.ShaderMaterial({
     vec3 applyQuaternion(vec3 v, vec4 q) {
       return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
     }
-    float easeBezier(float p, vec4 curve) {
+    /* float easeBezier(float p, vec4 curve) {
       float ip = 1.0 - p;
       return (3.0 * ip * ip * p * curve.xy + 3.0 * ip * p * p * curve.zw + p * p * p).y;
     }
     float ease(float p) {
       return easeBezier(p, vec4(0., 1., 0., 1.));
-    }
+    } */
 
     void main() {
       vZ = z;
@@ -43,8 +60,9 @@ const explosionCubeMaterial = new THREE.ShaderMaterial({
       vPhase = phase;
       float forwardFactor = pow(uAnimation, 0.5);
       vec2 sideFactor = vec2(sin(uAnimation*PI*2.*phase.z), sin(uAnimation*PI*2.*phase.w));
-      vec3 p = applyQuaternion(position * scale * (1.-z*maxZ) * (1.0-uAnimation) + vec3(0., 0., -pow(z*maxZ*forwardFactor, 0.5)), q) +
-        vec3(uAnimation * sideFactor.x, uAnimation * sideFactor.y, 0.)*0.1;
+      vec3 p = applyQuaternion(position * scale * (1.-z*maxZ) * (1.0-uAnimation) + vec3(0., 0., pow(z*maxZ*forwardFactor, 0.5)), q) +
+        vec3(uAnimation * sideFactor.x, uAnimation * sideFactor.y, 0.)*0.1 +
+        vec3(0., uAnimation * 0.1 * uGravity * phase.x, 0.);
       gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
     }
   `,
@@ -52,21 +70,23 @@ const explosionCubeMaterial = new THREE.ShaderMaterial({
     #define PI 3.1415926535897932384626433832795
 
     uniform float uAnimation;
+    uniform vec3 uColor1;
+    uniform vec3 uColor2;
     varying float vZ;
     varying float vMaxZ;
     varying vec4 vPhase;
 
-    vec3 c = vec3(${new THREE.Color(0x9ccc65).toArray().join(', ')});
-    vec3 s = vec3(${new THREE.Color(0x7e57c2).toArray().join(', ')});
-
+    // vec3 c = vec3(${new THREE.Color(0x9ccc65).toArray().join(', ')});
+    // vec3 s = vec3(${new THREE.Color(0x7e57c2).toArray().join(', ')});
+    
     void main() {
       float factor = min(pow(vZ*vMaxZ, 0.2) + pow(uAnimation, 2.), 1.0);
-      gl_FragColor = vec4(mix(c, s, factor) * (2.5 - pow(uAnimation, 0.2)) * 0.6 + vec3(0.03 * vPhase.x), 1.0);
+      gl_FragColor = vec4(mix(uColor1, uColor2, factor) * (2.5 - pow(uAnimation, 0.2)) * 0.6 + vec3(0.03 * vPhase.x), 1.0);
     }
   `,
   // transparent: true,
 });
-const _makeExplosionMesh = () => {
+const _makeExplosionMesh = (color1Hex, color2Hex, gravity, rate) => {
   const numPositions = explosionCubeGeometry.attributes.position.array.length * numSmokes * numZs;
   const numIndices = explosionCubeGeometry.index.array.length * numSmokes * numZs;
   const arrayBuffer = new ArrayBuffer(
@@ -141,39 +161,75 @@ const _makeExplosionMesh = () => {
   geometry.setIndex(new THREE.BufferAttribute(indices, 1));
 
   const material = explosionCubeMaterial.clone();
+  if (typeof color1Hex === 'number') {
+    material.uniforms.uColor1.value.setHex(color1Hex);
+  }
+  if (typeof color2Hex === 'number') {
+    material.uniforms.uColor2.value.setHex(color2Hex);
+  }
+  if (typeof gravity === 'number') {
+    material.uniforms.uGravity.value = gravity;
+  }
+  if (typeof rate === 'number') {
+    // nothing
+  } else {
+    rate = 1;
+  }
 
   const mesh = new THREE.Mesh(geometry, material);
   mesh.frustumCulled = false;
-  mesh.trigger = (position, quaternion) => {
-    material.uniform.uAnimation = 0;
+  mesh.update = timeDiff => {
+    material.uniforms.uAnimation.value += timeDiff/1000*rate;
+    material.uniforms.uAnimation.needsUpdate = true;
+    return material.uniforms.uAnimation.value < 1;
   };
+  /* mesh.trigger = (position, quaternion) => {
+    material.uniform.uAnimation = 0;
+  }; */
   return mesh;
 };
 
 export default () => {
   const app = useApp();
+  const {scene} = useInternals();
   
   let explosionMeshes = [];
-  const explosionRate = 2000;
-  let timePassed = explosionRate;
+  // const explosionRate = 2000;
+  const _addExplosionMesh = () => {
+    const color1 = app.getComponent('color1');
+    const color2 = app.getComponent('color2');
+    const gravity = app.getComponent('gravity');
+    const rate = app.getComponent('rate');
+    const explosionMesh = _makeExplosionMesh(color1, color2, gravity, rate);
+    // explosionMesh.position.set((-0.5+Math.random())*2, 0, (-0.5+Math.random())*2);
+    explosionMesh.position.copy(app.position);
+    explosionMesh.quaternion.copy(app.quaternion);
+    explosionMesh.scale.copy(app.scale);
+    explosionMesh.updateMatrixWorld();
+    scene.add(explosionMesh);
+    explosionMeshes.push(explosionMesh);
+  };
+  useUse(() => {
+    _addExplosionMesh();
+  });
+  
+  // let timePassed = explosionRate;
   useFrame(({timeDiff}) => {
-    timePassed += timeDiff;
+    /* timePassed += timeDiff;
     while (timePassed >= explosionRate) {
       const explosionMesh = _makeExplosionMesh();
       explosionMesh.position.set((-0.5+Math.random())*2, 0, (-0.5+Math.random())*2);
       app.add(explosionMesh);
       explosionMeshes.push(explosionMesh);
       timePassed -= explosionRate;
-    }
+    } */
     
     explosionMeshes = explosionMeshes.filter(explosionMesh => {
-      explosionMesh.material.uniforms.uAnimation.value += timeDiff/1000;
-      if (explosionMesh.material.uniforms.uAnimation.value < 1) {
-        return true;
-      } else {
-        app.remove(explosionMesh);
-        return false;
+      const result = explosionMesh.update(timeDiff);
+      if (!result) {
+        scene.remove(explosionMesh);
       }
+      return result;
     });
   });
   
