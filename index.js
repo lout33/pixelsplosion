@@ -30,7 +30,7 @@ const explosionCubeMaterial = new THREE.ShaderMaterial({
     },
   },
   vertexShader: `\
-    #define PI 3.1415926535897932384626433832795
+    ${THREE.ShaderChunk.common}
 
     uniform float uAnimation;
     uniform float uGravity;
@@ -42,6 +42,8 @@ const explosionCubeMaterial = new THREE.ShaderMaterial({
     varying float vZ;
     varying float vMaxZ;
     varying vec4 vPhase;
+
+    ${THREE.ShaderChunk.logdepthbuf_pars_vertex}
 
     vec3 applyQuaternion(vec3 v, vec4 q) {
       return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
@@ -64,11 +66,13 @@ const explosionCubeMaterial = new THREE.ShaderMaterial({
         vec3(uAnimation * sideFactor.x, uAnimation * sideFactor.y, 0.)*0.1 +
         vec3(0., uAnimation * 0.1 * uGravity * phase.x, 0.);
       gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      
+      ${THREE.ShaderChunk.logdepthbuf_vertex}
     }
   `,
   fragmentShader: `\
     #define PI 3.1415926535897932384626433832795
-
+    
     uniform float uAnimation;
     uniform vec3 uColor1;
     uniform vec3 uColor2;
@@ -78,10 +82,14 @@ const explosionCubeMaterial = new THREE.ShaderMaterial({
 
     // vec3 c = vec3(${new THREE.Color(0x9ccc65).toArray().join(', ')});
     // vec3 s = vec3(${new THREE.Color(0x7e57c2).toArray().join(', ')});
+
+    ${THREE.ShaderChunk.logdepthbuf_pars_fragment}
     
     void main() {
       float factor = min(pow(vZ*vMaxZ, 0.2) + pow(uAnimation, 2.), 1.0);
       gl_FragColor = vec4(mix(uColor1, uColor2, factor) * (2.5 - pow(uAnimation, 0.2)) * 0.6 + vec3(0.03 * vPhase.x), 1.0);
+
+      ${THREE.ShaderChunk.logdepthbuf_fragment}
     }
   `,
   // transparent: true,
