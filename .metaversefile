@@ -1,5 +1,6 @@
 {
   "name": "pixelsplosion",
+  "description": "pixelsplosion",
   "start_url": "index.js",
   "components": {
     "activate": true
