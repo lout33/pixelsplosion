@@ -2,9 +2,9 @@ import * as THREE from 'three';
 import metaversefile from 'metaversefile';
 const {useApp, useFrame, useActivate, useUse, useInternals} = metaversefile;
 
-const numSmokes = 200;
-const numZs = 100;
-const explosionCubeGeometry = new THREE.BoxBufferGeometry(0.14, 0.14, 0.14);
+const numSmokes = 20;
+const numZs = 10;
+const explosionCubeGeometry = new THREE.BoxBufferGeometry(0.54, 0.54, 0.54);
 const explosionCubeMaterial = new THREE.ShaderMaterial({
   uniforms: {
     uAnimation: {
